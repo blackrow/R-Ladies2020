@@ -10,6 +10,14 @@ pacman::p_load(tidyverse,
               ggcorrplot)
 
 
+## data sources 
+
+# the data used in this presentation is composed of 3 data sets : 
+# 1. the NYC taxi trip durations (file ! "train.csv"): https://www.kaggle.com/c/nyc-taxi-trip-duration/data 
+# 2. weather data in NYC : https://www.kaggle.com/mathijs/weather-data-in-new-york-city-2016
+# 3. NYC taxi with ORSM (files : "fastest_routes_train_part_1.csv" and "fastest_routes_train_part_2.csv") : 
+# https://www.kaggle.com/oscarleo/new-york-city-taxi-with-osrm
+
 ## Load data
 
 train <- as_tibble(fread('train.csv'))
@@ -125,6 +133,8 @@ day_trips %>%
   arrange(desc(dist)) %>%
   select(dist, pickup_datetime, dropoff_datetime, speed)
 
+
+## Codes of each slide
 
 # Diagramme en bâton (slide 25)
 
