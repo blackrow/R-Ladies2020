@@ -1,6 +1,6 @@
 ## R Packages
 
-setwd("D:/Mooc/R algerian users/R ladies 2020/New folder")
+
 pacman::p_load(tidyverse,
               data.table,
               lubridate,
@@ -9,54 +9,30 @@ pacman::p_load(tidyverse,
               ggExtra,
               ggcorrplot)
 
+
 ## Load data
 
 train <- as_tibble(fread('train.csv'))
 weather <- as_tibble(fread("weather_data_nyc_centralpark_2016(1).csv"))
+fast1 <- as_tibble(fread("fastest_routes_train_part_1.csv"))
+fast2 <- as_tibble(fread("fastest_routes_train_part_2.csv"))
+fastest_route <- bind_rows(fast1, fast2)
+
 
 ## explore
  
 summary(train)
 glimpse(train)
-summary(test)
-glimpse(test)
 
 
-## combine data
+
+## feature engineering and data join
 
 train <- train %>%
            mutate(pickup_datetime = ymd_hms(pickup_datetime),
                   dropoff_datetime = ymd_hms(dropoff_datetime),
                   vendor_id = factor(vendor_id),
                   passenger_count = factor(passenger_count))
-
-## checking data consistency 
-
-
-train %>%
-   mutate(check = abs(int_length(interval(dropoff_datetime,pickup_datetime)) + trip_duration) > 0) %>%
-   select(check, pickup_datetime, dropoff_datetime, trip_duration) %>%
-   group_by(check) %>%
-   count()
-
-
-jfk_coord <- tibble(lon = -73.778889, lat = 40.639722)
-la_guardia_coord <- tibble(lon = -73.872611, lat = 40.77725)
-
-pick_coord <- train %>%
-   select(pickup_longitude, pickup_latitude)
- 
-drop_coord <- train %>%
-   select(dropoff_longitude, dropoff_latitude)
-
-train$dist <- distCosine(pick_coord, drop_coord)
-train$bearing = bearing(pick_coord, drop_coord)
- 
-train$jfk_dist_pick <- distCosine(pick_coord, jfk_coord)
-train$jfk_dist_drop <- distCosine(drop_coord, jfk_coord)
-train$lg_dist_pick <- distCosine(pick_coord, la_guardia_coord)
-train$lg_dist_drop <- distCosine(drop_coord, la_guardia_coord)
-
 
 train <- train %>%
    mutate(speed = dist/trip_duration*3.6,
@@ -83,21 +59,13 @@ weather <- weather %>%
           max_temp = `maximum temperature`,
           min_temp = `minimum temperature`)
 
-foo <- weather %>%
-   select(date, rain, s_fall, all_precip, has_snow, has_rain, s_depth, max_temp, min_temp)
- 
- 
-train <- left_join(train, foo, by = "date")
- 
-
-foo <- as_tibble(fread("fastest_routes_train_part_1.csv"))
 
 
-bar <- as_tibble(fread("fastest_routes_train_part_2.csv"))
+train <- weather %>%
+   select(date, rain, s_fall, all_precip, has_snow, has_rain, s_depth, max_temp, min_temp) %>%
+   train <- right_join(train, by = "date") 
 
-fastest_route <- bind_rows(foo, bar)
- 
-foo <- fastest_route %>%
+train <- fastest_route %>%
    select(id, total_distance, total_travel_time, number_of_steps,
           step_direction, step_maneuvers) %>%
    mutate(fastest_speed = total_distance/total_travel_time*3.6,
@@ -105,11 +73,36 @@ foo <- fastest_route %>%
           right_turns = str_count(step_direction, "right"),
           turns = str_count(step_maneuvers, "turn")
    ) %>%
-   select(-step_direction, -step_maneuvers)
- 
-train <- left_join(train, foo, by = "id") %>%
+   select(-step_direction, -step_maneuvers) %>%
+   right_join(train, by = "id") %>%
    mutate(fast_speed_trip = total_distance/trip_duration*3.6)
 
+# some interesting points (JFK aeroport and La Guardia aeroport)
+
+jfk_coord <- tibble(lon = -73.778889, lat = 40.639722)
+la_guardia_coord <- tibble(lon = -73.872611, lat = 40.77725)
+
+# distances to La Guardia and to JFK (distCosine function is part of the geosphere package)
+
+train <- train %>%
+          mutate(jfk_dist_pick = distCosine(pick_coord, jfk_coord),
+                 jfk_dist_drop = distCosine(drop_coord, jfk_coord),
+                 lg_dist_pick = distCosine(pick_coord, la_guardia_coord),
+                 lg_dist_drop = distCosine(drop_coord, la_guardia_coord))
+
+# create the distance and bearing between pickup and drop off (bearing function is part of the geosphere package)
+
+pick_coord <- train %>%
+   select(pickup_longitude, pickup_latitude)
+ 
+drop_coord <- train %>%
+   select(dropoff_longitude, dropoff_latitude)
+
+train <- train %>%
+           mutate(dist = distCosine(pick_coord, drop_coord),
+                  bearing = bearing(pick_coord, drop_coord))
+ 
+# other usefull transformation of data
 
 day_plus_trips <- train %>%
   filter(trip_duration > 24*3600)
@@ -128,27 +121,26 @@ day_trips <- train %>%
   filter(trip_duration < 24*3600 & trip_duration > 22*3600)
 
 
-
 day_trips %>% 
   arrange(desc(dist)) %>%
   select(dist, pickup_datetime, dropoff_datetime, speed)
 
 
-rm("combine")
-rm("bar")
-rm("foo")
-rm("test")
-rm("weather")
-rm("fastest_route")
-rm("drop_coord")
-rm("pick_coord")  
+# Diagramme en bâton (slide 25)
 
+train %>%
+  group_by(passenger_count) %>%
+  count() %>%
+  ggplot(aes(passenger_count, n, fill = passenger_count)) +
+  geom_col() +
+  scale_y_sqrt() + 
+  labs(x = "passengers count", y ="count",
+       title = "Column",
+       subtitle = "Distribution of number of passengers")+
+  theme_bw() +
+  theme(legend.position = "none")
 
-
-
-
-
-# 1
+# Histogramme (slide 26)
 
 train %>%
   ggplot(aes(trip_duration)) +
@@ -162,7 +154,7 @@ train %>%
        x = "Trip duration")
 
 
-# 2
+# Histogramme (II) (Slide 27)
 
 p1 <- train %>%
   ggplot(aes(pickup_datetime)) +
@@ -190,7 +182,7 @@ title <- ggdraw() +
 plot_grid(title, p1, p2, nrow = 3, rel_heights = c(0.1,0.45,0.45))
 
 
-# 3
+# Nuage de Points (slide 28)
 
 train %>%
   mutate(hpick = hour(pickup_datetime)) %>%
@@ -205,7 +197,7 @@ train %>%
   theme_minimal_grid()
 
 
-# 4 
+# Diagramme linéaire (slide 29)
 
 p1 <- train %>%
   mutate(hpick = hour(pickup_datetime),
@@ -246,7 +238,7 @@ plot_grid(title, p1, p2,
             c(0.1,0.45,0.45)) 
 
 
-# 5 
+# Statistiques et Facettes (slide 30) 
 
 train %>%
   mutate(hpick = hour(pickup_datetime)) %>%
@@ -263,7 +255,7 @@ train %>%
   theme(legend.position = "none") 
 
 
-# 6
+# Boite à Moustaches (slide 31)
 
 train %>%
   ggplot(aes(passenger_count, trip_duration, color = passenger_count)) +
@@ -276,7 +268,7 @@ train %>%
   theme_light() + 
   theme(legend.position = "none") 
 
-# 7 
+# Densités (slide 32) 
 
 train %>%
   ggplot(aes(trip_duration, fill = vendor_id)) +
@@ -288,7 +280,7 @@ train %>%
   theme_dark()
 
 
-# 8
+# Nuage de Points (slide 33)
 
 set.seed(4321)
 
@@ -304,7 +296,7 @@ train %>%
        sampled obsevrations") +
   theme_bw()
   
-# 9 and 10
+# Nuage de points (Jitter) à distribution Marginale (slide 34)
 
 p1 <- train %>%
   sample_n(5e3) %>%
@@ -312,12 +304,27 @@ p1 <- train %>%
   geom_jitter(alpha = 0.5) +
   scale_x_log10() +
   scale_y_log10() +
+  labs(x = "Direct distance [m]", y = "Trip duration [s]",
+       title = "Scatterplot",
+       subtitle = "Trip Duration vs Direct Distance for 5000 
+       sampled obsevrations") +
   geom_smooth(col = "blue", method = "lm", se = FALSE)
+
+ggMarginal(p1, type = "histogram", fill ="blue")
+
+
+# slide 35 
 
 ggMarginal(p1, type = "density", fill ="blue")
 
+ggMarginal(p1, type = "boxplot", fill ="blue")
 
-# 11
+ggMarginal(p1, type = "violin", fill ="blue")
+
+ggMarginal(p1, type = "densigram", fill ="blue")
+
+
+# Alternative au nuage de points : bins (slide 36)
 
 train %>%
   filter(trip_duration < 3600 & trip_duration > 120) %>%
@@ -333,7 +340,7 @@ train %>%
 
 
 
-# 12
+# Cartes thématiques (Heat Maps) (slide 37)
 
 train %>%
   group_by(wday, hour) %>%
@@ -343,10 +350,10 @@ train %>%
   labs(x = "Hour of the day", y = "Day of the week",
        title = "Heatmap",
        subtitle = "Median Speed per day and hour") +
-  scale_fill_continuous() 
+  scale_fill_distiller(palette = "Spectral")        # scale_fill_continuous()
 
 
-# 13
+# Utilisation des coordonnées : polaires (slide 38)
 
 train %>%
   filter(dist < 1e5) %>%
@@ -371,7 +378,7 @@ train %>%
   scale_x_continuous(breaks = seq(-180, 180, by = 45))
 
 
-# 14 
+# Utilisation des boucles pour dessiner un graphique des différents itinéraires (slide 39)
 
 p1 <- ggplot() +
   geom_polygon(data=ny_map, aes(x=long, y=lat), fill = "grey60") +
@@ -396,7 +403,7 @@ p1 + ggtitle("Longer than
 
 
 
-# 15
+# Utilisation des boucles pour dessiner un graphique des différents itinéraires (II) (slide 40)
 
 set.seed(2017)
 day_trips <- day_trips %>%
@@ -426,11 +433,9 @@ for (i in seq(1,nrow(tpick))){
 p1 + ggtitle("22h to 24h long trips in relation to Manhattan")
 
 
+# Matrice de Corrélation (slide 41)
 
-
-# 16
-
-foo <- train %>%
+train %>%
   select(-id, -pickup_datetime, -dropoff_datetime, -jfk_dist_pick,
          -jfk_dist_drop, -lg_dist_pick, -lg_dist_drop, -date,
          -store_and_fwd_flag, -hour, -rain, -s_fall, -all_precip,
@@ -443,9 +448,7 @@ foo <- train %>%
          month = as.integer(month),
          blizzard = as.integer(blizzard),
          has_snow = as.integer(has_snow)) %>%
-  select(trip_duration, speed, everything())
-
-train %>%
+  select(trip_duration, speed, everything()) %>%
   cor(use="complete.obs", method = "spearman") %>%
   round(1) %>%
   ggcorrplot(hc.order = TRUE, 
@@ -458,7 +461,7 @@ train %>%
              ggtheme=theme_bw)
 
 
-# 17
+# Surface (slide 42)
 
 train %>%
   mutate(hpick = hour(pickup_datetime),
@@ -472,21 +475,8 @@ train %>%
        subtitle = "Trip duration per Hour")+
   theme_classic()
 
-# 18 
 
-train %>%
-  group_by(passenger_count) %>%
-  count() %>%
-  ggplot(aes(passenger_count, n, fill = passenger_count)) +
-  geom_col() +
-  scale_y_sqrt() + 
-  labs(x = "passengers count", y ="count",
-       title = "Column",
-       subtitle = "Distribution of number of passengers")+
-  theme_bw() +
-  theme(legend.position = "none")
-
-# 19
+# Utilisation de la couche "statistiques" (slide 43)
 
 
 train %>% 
